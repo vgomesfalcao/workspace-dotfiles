@@ -1,8 +1,6 @@
 # workspace-setup
 
-Script bash autossuficiente para configurar um workspace remoto (VPS/servidor) do zero.
-
-Não depende de nenhum arquivo local — tudo está embutido no script.
+Script bash para configurar um workspace.
 
 ## O que instala
 
