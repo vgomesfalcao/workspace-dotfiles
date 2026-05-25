@@ -1,8 +1,23 @@
-# workspace-setup
+# workspace-dotfiles
 
-Script bash para configurar um workspace.
+Scripts para provisionar e operar um workspace remoto Ubuntu (ARM64) com Docker e Tailscale.
 
-## O que instala
+---
+
+## Conteúdo
+
+| Arquivo | Descrição |
+|---|---|
+| `workspace-setup.sh` | Provisiona um servidor do zero (shell, ferramentas, dotfiles) |
+| `docker-tailscale-proxy.sh` | Monitora Docker e cria proxies HTTPS automáticos via Tailscale Serve |
+
+---
+
+## workspace-setup.sh
+
+Configura um servidor Ubuntu remoto do zero via SSH. Não depende de arquivos locais — tudo é embutido no script.
+
+### O que instala
 
 | Ferramenta | Descrição |
 |---|---|
@@ -19,7 +34,7 @@ Script bash para configurar um workspace.
 | bun | Runtime e gerenciador de pacotes JS |
 | ripgrep, fd, fzf, bat, htop | Ferramentas CLI modernas |
 
-## Uso
+### Uso
 
 ```bash
 # Com alias do ~/.ssh/config
@@ -29,9 +44,9 @@ bash workspace-setup.sh workspace
 bash workspace-setup.sh ubuntu@1.2.3.4
 ```
 
-## Requisitos
+### Requisitos
 
-- `bash` e `ssh` na máquina de onde o script é executado
+- `bash` e `ssh` na máquina local
 - Acesso SSH ao servidor de destino
 - O usuário remoto deve ter `sudo` sem senha (padrão em VPS Ubuntu)
 
@@ -39,12 +54,14 @@ bash workspace-setup.sh ubuntu@1.2.3.4
 
 ## docker-tailscale-proxy.sh
 
-Monitora eventos Docker e cria automaticamente proxies HTTPS via **Tailscale Serve**.
+Monitora eventos Docker e cria automaticamente proxies HTTPS via **Tailscale Serve** sempre que um container sobe.
 
-- Containers em porta **80/443/8080/8443** → porta HTTPS dedicada (ex: `:8800/`) para não quebrar assets de apps web (Drupal, Laravel, etc.)
+### Comportamento
+
+- Containers em porta **80 / 443 / 8080 / 8443** → porta HTTPS dedicada (`:8800`, `:8801`…) para não quebrar assets de apps web com URLs absolutas (Drupal, Laravel, etc.)
 - Demais containers com porta mapeada → caminho `/<nome>` no domínio Tailscale
 - Ao iniciar, processa containers já em execução
-- Roda como serviço de usuário systemd (`docker-proxy.service`)
+- Roda como serviço de usuário systemd
 
 ### Instalação no servidor
 
@@ -86,4 +103,45 @@ systemctl --user enable --now docker-proxy.service
 tailscale serve status                          # ver mapeamentos ativos
 journalctl --user -u docker-proxy.service -f   # logs em tempo real
 systemctl --user status docker-proxy.service   # status do serviço
+```
+
+---
+
+## Como os serviços Docker ficam acessíveis
+
+Quando um container sobe no workspace, três caminhos de acesso coexistem automaticamente:
+
+```
+Container sobe no workspace com porta 8080
+    │
+    ├─► Docker expõe: workspace-ip:8080 (acesso direto)
+    │
+    ├─► VS Code tunnel detecta :8080 → faz port-forward → localhost:8080 na sua máquina
+    │
+    └─► docker-tailscale-proxy.sh detecta o container →
+        tailscale serve --https=8800 http://localhost:8080 →
+        https://workspace.TAILNET.ts.net:8800
+```
+
+| Endereço | Mecanismo | Quem acessa |
+|---|---|---|
+| `http://workspace:8080` | Tailscale MagicDNS resolve o hostname direto | Qualquer dispositivo no Tailnet |
+| `http://localhost:8080` | VS Code tunnel faz port-forward automático | Só você, via VS Code |
+| `https://workspace.TAILNET.ts.net:8800` | Tailscale Serve (HTTPS com certificado) | Qualquer dispositivo no Tailnet |
+
+### MagicDNS — o atalho mais prático
+
+Com o Tailscale ativo nos dois dispositivos, o hostname `workspace` resolve automaticamente para o IP Tailscale do servidor. Então `http://workspace:8080` funciona direto no browser — sem precisar lembrar IP ou domínio longo.
+
+Para desenvolvimento do dia a dia, esse é o caminho mais simples. O Tailscale Serve (HTTPS) é útil quando precisa de:
+- Certificado HTTPS válido
+- Acesso de dispositivos mobile
+- Exposição via Funnel (internet pública fora do Tailnet)
+
+### Desativar port-forward automático do VS Code
+
+Se os serviços aparecerem em lugares demais, desative o forward automático no `settings.json`:
+
+```json
+"remote.autoForwardPorts": false
 ```
